@@ -1468,6 +1468,12 @@ static int git_status_config(const char *k, const char *v, void *cb)
 		s->detect_rename = git_config_rename(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "status.parallelsubmodules")) {
+		s->parallel_jobs_submodules = git_config_int(k, v);
+		if (s->parallel_jobs_submodules < 0)
+			die(_("status.parallelsubmodules cannot be negative"));
+		return 0;
+	}
 	return git_diff_ui_config(k, v, NULL);
 }
 

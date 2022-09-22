@@ -615,7 +615,7 @@ static void wt_status_collect_changes_worktree(struct wt_status *s)
 	rev.diffopt.rename_limit = s->rename_limit >= 0 ? s->rename_limit : rev.diffopt.rename_limit;
 	rev.diffopt.rename_score = s->rename_score >= 0 ? s->rename_score : rev.diffopt.rename_score;
 	copy_pathspec(&rev.prune_data, &s->pathspec);
-	run_diff_files(&rev, 0);
+	run_diff_files(&rev, 0, s->parallel_jobs_submodules);
 	release_revisions(&rev);
 }
 
@@ -1151,7 +1151,7 @@ static void wt_longstatus_print_verbose(struct wt_status *s)
 		setup_work_tree();
 		rev.diffopt.a_prefix = "i/";
 		rev.diffopt.b_prefix = "w/";
-		run_diff_files(&rev, 0);
+		run_diff_files(&rev, 0, -1);
 	}
 	release_revisions(&rev);
 }
@@ -2548,7 +2548,7 @@ int has_unstaged_changes(struct repository *r, int ignore_submodules)
 	}
 	rev_info.diffopt.flags.quick = 1;
 	diff_setup_done(&rev_info.diffopt);
-	result = run_diff_files(&rev_info, 0);
+	result = run_diff_files(&rev_info, 0, -1);
 	result = diff_result_code(&rev_info.diffopt, result);
 	release_revisions(&rev_info);
 	return result;

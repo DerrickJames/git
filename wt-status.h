@@ -131,6 +131,7 @@ struct wt_status {
 	enum wt_status_format status_format;
 	struct wt_status_state state;
 	struct object_id oid_commit; /* when not Initial */
+	int parallel_jobs_submodules;
 
 	/* These are computed during processing of the individual sections */
 	int committable;

@@ -275,7 +275,7 @@ static int builtin_diff_files(struct rev_info *revs, int argc, const char **argv
 		perror("read_cache_preload");
 		return -1;
 	}
-	return run_diff_files(revs, options);
+	return run_diff_files(revs, options, -1);
 }
 
 struct symdiff {

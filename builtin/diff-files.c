@@ -80,7 +80,7 @@ int cmd_diff_files(int argc, const char **argv, const char *prefix)
 		result = -1;
 		goto cleanup;
 	}
-	result = run_diff_files(&rev, options);
+	result = run_diff_files(&rev, options, -1);
 	result = diff_result_code(&rev.diffopt, result);
 cleanup:
 	release_revisions(&rev);

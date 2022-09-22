@@ -652,7 +652,7 @@ static void status_submodule(const char *path, const struct object_id *ce_oid,
 	diff_files_args.nr = setup_revisions(diff_files_args.nr,
 					     diff_files_args.v,
 					     &rev, NULL);
-	diff_files_result = run_diff_files(&rev, 0);
+	diff_files_result = run_diff_files(&rev, 0, -1);
 
 	if (!diff_result_code(&rev.diffopt, diff_files_result)) {
 		print_status(flags, ' ', path, ce_oid,
@@ -1123,7 +1123,7 @@ static int compute_summary_module_list(struct object_id *head_oid,
 	if (diff_cmd == DIFF_INDEX)
 		run_diff_index(&rev, info->cached);
 	else
-		run_diff_files(&rev, 0);
+		run_diff_files(&rev, 0, -1);
 	prepare_submodule_summary(info, &list);
 cleanup:
 	strvec_clear(&diff_args);

@@ -1078,7 +1078,7 @@ static int check_changes_tracked_files(const struct pathspec *ps)
 		goto done;
 	}
 
-	result = run_diff_files(&rev, 0);
+	result = run_diff_files(&rev, 0, -1);
 	if (diff_result_code(&rev.diffopt, result)) {
 		ret = 1;
 		goto done;

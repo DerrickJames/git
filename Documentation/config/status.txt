@@ -75,3 +75,9 @@ status.submoduleSummary::
 	the --ignore-submodules=dirty command-line option or the 'git
 	submodule summary' command, which shows a similar output but does
 	not honor these settings.
+
+status.parallelSubmodules::
+	When linkgit:git-status[1] is run in a superproject with
+	submodules, a status subprocess is spawned for every submodule.
+	This option specifies the number of submodule status subprocesses
+	to run in parallel. If unset, it defaults to 1.
