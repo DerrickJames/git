@@ -20,6 +20,7 @@
 #include "wildmatch.h"
 #include "gettext.h"
 
+static int pipe_output = 0;
 static int number_callbacks;
 static int parallel_next(struct child_process *cp,
 			 struct strbuf *err,
@@ -52,15 +53,32 @@ static int no_job(struct child_process *cp,
 	return 0;
 }
 
+static int task_finished_pipe_output(int result,
+			 struct strbuf *err,
+			 void *pp_cb,
+			 void *pp_task_cb)
+{
+	if (err && pipe_output) {
+		fprintf(stderr, "%s", err->buf);
+		strbuf_reset(err);
+	}
+	return 0;
+}
+
 static int task_finished(int result,
 			 struct strbuf *err,
 			 void *pp_cb,
 			 void *pp_task_cb)
 {
-	if (err)
+	if (err) {
 		strbuf_addstr(err, "asking for a quick stop\n");
-	else
+		if (pipe_output) {
+			fprintf(stderr, "%s", err->buf);
+			strbuf_reset(err);
+		}
+	} else {
 		fprintf(stderr, "asking for a quick stop\n");
+	}
 	return 1;
 }
 
@@ -423,13 +441,20 @@ int cmd__run_command(int argc, const char **argv)
 		run_processes_parallel_ungroup = 1;
 	}
 
+	if (!strcmp(argv[1], "--pipe-output")) {
+		argv += 1;
+		argc -= 1;
+		run_processes_parallel_pipe_output = 1;
+		pipe_output = 1;
+	}
+
 	jobs = atoi(argv[2]);
 	strvec_clear(&proc.args);
 	strvec_pushv(&proc.args, (const char **)argv + 3);
 
 	if (!strcmp(argv[1], "run-command-parallel"))
 		exit(run_processes_parallel(jobs, parallel_next,
-					    NULL, NULL, &proc));
+					    NULL, task_finished_pipe_output, &proc));
 
 	if (!strcmp(argv[1], "run-command-abort"))
 		exit(run_processes_parallel(jobs, parallel_next,

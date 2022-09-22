@@ -483,8 +483,17 @@ typedef int (*task_finished_fn)(int result,
  * "run_processes_parallel_ungroup" to "1" before invoking
  * run_processes_parallel(), it will be set back to "0" as soon as the
  * API reads that setting.
+ *
+ * If the "pipe_output" option is specified, the output will be piped
+ * to task_finished_fn in the "struct strbuf *out" variable. The output
+ * will still be printed unless the callback resets the strbuf. The
+ * "pipe_output" option can be enabled by setting the global
+ * "run_processes_parallel_pipe_output" to "1" before invoking
+ * run_processes_parallel(), it will be set back to "0" as soon as the
+ * API reads that setting.
  */
 extern int run_processes_parallel_ungroup;
+extern int run_processes_parallel_pipe_output;
 int run_processes_parallel(int n,
 			   get_next_task_fn,
 			   start_failure_fn,
