@@ -73,19 +73,48 @@ static int match_stat_with_submodule(struct diff_options *diffopt,
 				     unsigned *dirty_submodule)
 {
 	int changed = ie_match_stat(diffopt->repo->index, ce, st, ce_option);
-	if (S_ISGITLINK(ce->ce_mode)) {
-		struct diff_flags orig_flags = diffopt->flags;
-		if (!diffopt->flags.override_submodule_config)
-			set_diffopt_flags_from_submodule_config(diffopt, ce->name);
-		if (diffopt->flags.ignore_submodules)
-			changed = 0;
-		else if (!diffopt->flags.ignore_dirty_submodules &&
-			 (!changed || diffopt->flags.dirty_submodules))
-			*dirty_submodule = is_submodule_modified(ce->name,
-								 diffopt->flags.ignore_untracked_in_submodules);
-		diffopt->flags = orig_flags;
+	struct diff_flags orig_flags = diffopt->flags;
+	if (!S_ISGITLINK(ce->ce_mode))
+		goto cleanup;
+	if (!diffopt->flags.override_submodule_config)
+		set_diffopt_flags_from_submodule_config(diffopt, ce->name);
+	if (diffopt->flags.ignore_submodules) {
+		changed = 0;
+		goto cleanup;
 	}
+	if (!diffopt->flags.ignore_dirty_submodules &&
+		(!changed || diffopt->flags.dirty_submodules))
+			*dirty_submodule = is_submodule_modified(ce->name,
+							diffopt->flags.ignore_untracked_in_submodules);
+cleanup:
+	diffopt->flags = orig_flags;
 	return changed;
+}
+
+static void finish_run_diff_files(struct rev_info *revs,
+						  struct cache_entry *ce,
+						  struct index_state *istate,
+						  int changed, int dirty_submodule,
+						  unsigned int newmode)
+{
+	unsigned int oldmode;
+	const struct object_id *old_oid, *new_oid;
+
+	if (!changed && !dirty_submodule) {
+			ce_mark_uptodate(ce);
+			if (!S_ISGITLINK(ce->ce_mode))
+				mark_fsmonitor_valid(istate, ce);
+			if (!revs->diffopt.flags.find_copies_harder)
+				return;
+		}
+		oldmode = ce->ce_mode;
+		old_oid = &ce->oid;
+		new_oid = changed ? null_oid() : &ce->oid;
+		diff_change(&revs->diffopt, oldmode, newmode,
+			    old_oid, new_oid,
+			    !is_null_oid(old_oid),
+			    !is_null_oid(new_oid),
+			    ce->name, 0, dirty_submodule);
 }
 
 int run_diff_files(struct rev_info *revs, unsigned int option)
@@ -105,11 +134,10 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 		diff_unmerged_stage = 2;
 	entries = istate->cache_nr;
 	for (i = 0; i < entries; i++) {
-		unsigned int oldmode, newmode;
+		unsigned int newmode;
 		struct cache_entry *ce = istate->cache[i];
 		int changed;
 		unsigned dirty_submodule = 0;
-		const struct object_id *old_oid, *new_oid;
 
 		if (diff_can_quit_early(&revs->diffopt))
 			break;
@@ -244,22 +272,7 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 							    ce_option, &dirty_submodule);
 			newmode = ce_mode_from_stat(ce, st.st_mode);
 		}
-
-		if (!changed && !dirty_submodule) {
-			ce_mark_uptodate(ce);
-			mark_fsmonitor_valid(istate, ce);
-			if (!revs->diffopt.flags.find_copies_harder)
-				continue;
-		}
-		oldmode = ce->ce_mode;
-		old_oid = &ce->oid;
-		new_oid = changed ? null_oid() : &ce->oid;
-		diff_change(&revs->diffopt, oldmode, newmode,
-			    old_oid, new_oid,
-			    !is_null_oid(old_oid),
-			    !is_null_oid(new_oid),
-			    ce->name, 0, dirty_submodule);
-
+		finish_run_diff_files(revs, ce, istate, changed, dirty_submodule, newmode);
 	}
 	diffcore_std(&revs->diffopt);
 	diff_flush(&revs->diffopt);
