@@ -1497,6 +1497,7 @@ enum child_state {
 };
 
 int run_processes_parallel_ungroup;
+int run_processes_parallel_pipe_output;
 struct parallel_processes {
 	void *data;
 
@@ -1793,10 +1794,12 @@ int run_processes_parallel(int n,
 	int output_timeout = 100;
 	int spawn_cap = 4;
 	int ungroup = run_processes_parallel_ungroup;
+	int pipe_output = run_processes_parallel_pipe_output;
 	struct parallel_processes pp;
 
 	/* unset for the next API user */
 	run_processes_parallel_ungroup = 0;
+	run_processes_parallel_pipe_output = 0;
 
 	pp_init(&pp, n, get_next_task, start_failure, task_finished, pp_cb,
 		ungroup);
@@ -1823,7 +1826,8 @@ int run_processes_parallel(int n,
 				pp.children[i].state = GIT_CP_WAIT_CLEANUP;
 		} else {
 			pp_buffer_stderr(&pp, output_timeout);
-			pp_output(&pp);
+			if (!pipe_output)
+				pp_output(&pp);
 		}
 		code = pp_collect_finished(&pp);
 		if (code) {

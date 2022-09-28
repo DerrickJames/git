@@ -148,7 +148,7 @@ int add_files_to_cache(const char *prefix,
 	 * may not have their own transaction active.
 	 */
 	begin_odb_transaction();
-	run_diff_files(&rev, DIFF_RACY_IS_MODIFIED);
+	run_diff_files(&rev, DIFF_RACY_IS_MODIFIED, -1);
 	end_odb_transaction();
 
 	release_revisions(&rev);
@@ -325,7 +325,7 @@ static int edit_patch(int argc, const char **argv, const char *prefix)
 	out = xopen(file, O_CREAT | O_WRONLY | O_TRUNC, 0666);
 	rev.diffopt.file = xfdopen(out, "w");
 	rev.diffopt.close_file = 1;
-	if (run_diff_files(&rev, 0))
+	if (run_diff_files(&rev, 0, -1))
 		die(_("Could not write patch"));
 
 	if (launch_editor(file, NULL, NULL))

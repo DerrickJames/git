@@ -65,30 +65,73 @@ static int check_removed(const struct index_state *istate, const struct cache_en
  * Return 1 when changes are detected, 0 otherwise. If the DIRTY_SUBMODULES
  * option is set, the caller does not only want to know if a submodule is
  * modified at all but wants to know all the conditions that are met (new
- * commits, untracked content and/or modified content).
+ * commits, untracked content and/or modified content). If
+ * defer_submodule_status bit is set, dirty_submodule will be left to the
+ * caller to set. defer_submodule_status can also be set to 0 in this
+ * function if there is no need to check if the submodule is modified.
  */
 static int match_stat_with_submodule(struct diff_options *diffopt,
 				     const struct cache_entry *ce,
 				     struct stat *st, unsigned ce_option,
-				     unsigned *dirty_submodule)
+				     unsigned *dirty_submodule, int *defer_submodule_status,
+					 int *ignore_untracked_in_submodules)
 {
 	int changed = ie_match_stat(diffopt->repo->index, ce, st, ce_option);
-	if (S_ISGITLINK(ce->ce_mode)) {
-		struct diff_flags orig_flags = diffopt->flags;
-		if (!diffopt->flags.override_submodule_config)
-			set_diffopt_flags_from_submodule_config(diffopt, ce->name);
-		if (diffopt->flags.ignore_submodules)
-			changed = 0;
-		else if (!diffopt->flags.ignore_dirty_submodules &&
-			 (!changed || diffopt->flags.dirty_submodules))
-			*dirty_submodule = is_submodule_modified(ce->name,
-								 diffopt->flags.ignore_untracked_in_submodules);
-		diffopt->flags = orig_flags;
+	int defer = 0;
+	struct diff_flags orig_flags = diffopt->flags;
+	if (!S_ISGITLINK(ce->ce_mode))
+		goto cleanup;
+	if (!diffopt->flags.override_submodule_config)
+		set_diffopt_flags_from_submodule_config(diffopt, ce->name);
+	if (diffopt->flags.ignore_submodules) {
+		changed = 0;
+		goto cleanup;
 	}
+	if (!diffopt->flags.ignore_dirty_submodules &&
+		(!changed || diffopt->flags.dirty_submodules)) {
+		if (defer_submodule_status && *defer_submodule_status) {
+			defer = 1;
+			*ignore_untracked_in_submodules =
+							diffopt->flags.ignore_untracked_in_submodules;
+		} else {
+			*dirty_submodule = is_submodule_modified(ce->name,
+							diffopt->flags.ignore_untracked_in_submodules);
+		}
+	}
+cleanup:
+	diffopt->flags = orig_flags;
+	if (defer_submodule_status)
+		*defer_submodule_status = defer;
 	return changed;
 }
 
-int run_diff_files(struct rev_info *revs, unsigned int option)
+static void finish_run_diff_files(struct rev_info *revs,
+						  struct cache_entry *ce,
+						  struct index_state *istate,
+						  int changed, int dirty_submodule,
+						  unsigned int newmode)
+{
+	unsigned int oldmode;
+	const struct object_id *old_oid, *new_oid;
+
+	if (!changed && !dirty_submodule) {
+			ce_mark_uptodate(ce);
+			if (!S_ISGITLINK(ce->ce_mode))
+				mark_fsmonitor_valid(istate, ce);
+			if (!revs->diffopt.flags.find_copies_harder)
+				return;
+		}
+		oldmode = ce->ce_mode;
+		old_oid = &ce->oid;
+		new_oid = changed ? null_oid() : &ce->oid;
+		diff_change(&revs->diffopt, oldmode, newmode,
+			    old_oid, new_oid,
+			    !is_null_oid(old_oid),
+			    !is_null_oid(new_oid),
+			    ce->name, 0, dirty_submodule);
+}
+
+int run_diff_files(struct rev_info *revs, unsigned int option, int parallel_jobs)
 {
 	int entries, i;
 	int diff_unmerged_stage = revs->max_count;
@@ -96,6 +139,7 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 			      ? CE_MATCH_RACY_IS_DIRTY : 0);
 	uint64_t start = getnanotime();
 	struct index_state *istate = revs->diffopt.repo->index;
+	struct string_list submodules = STRING_LIST_INIT_NODUP;
 
 	diff_set_mnemonic_prefix(&revs->diffopt, "i/", "w/");
 
@@ -105,11 +149,13 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 		diff_unmerged_stage = 2;
 	entries = istate->cache_nr;
 	for (i = 0; i < entries; i++) {
-		unsigned int oldmode, newmode;
+		unsigned int newmode;
 		struct cache_entry *ce = istate->cache[i];
 		int changed;
 		unsigned dirty_submodule = 0;
-		const struct object_id *old_oid, *new_oid;
+		int defer_submodule_status = revs && revs->repo &&
+							!strcmp(revs->repo->gitdir, ".git");
+		int ignore_untracked_in_submodules;
 
 		if (diff_can_quit_early(&revs->diffopt))
 			break;
@@ -241,25 +287,35 @@ int run_diff_files(struct rev_info *revs, unsigned int option)
 			}
 
 			changed = match_stat_with_submodule(&revs->diffopt, ce, &st,
-							    ce_option, &dirty_submodule);
+							ce_option, &dirty_submodule,
+							&defer_submodule_status,
+							&ignore_untracked_in_submodules);
 			newmode = ce_mode_from_stat(ce, st.st_mode);
-		}
-
-		if (!changed && !dirty_submodule) {
-			ce_mark_uptodate(ce);
-			mark_fsmonitor_valid(istate, ce);
-			if (!revs->diffopt.flags.find_copies_harder)
+			if (defer_submodule_status) {
+				struct string_list_item *item =
+								string_list_append(&submodules, ce->name);
+				struct submodule_status_util *util = xmalloc(sizeof(*util));
+				util->changed = changed;
+				util->dirty_submodule = 0;
+				util->ignore_untracked = ignore_untracked_in_submodules;
+				util->newmode = newmode;
+				util->ce = ce;
+				item->util = util;
 				continue;
+			}
 		}
-		oldmode = ce->ce_mode;
-		old_oid = &ce->oid;
-		new_oid = changed ? null_oid() : &ce->oid;
-		diff_change(&revs->diffopt, oldmode, newmode,
-			    old_oid, new_oid,
-			    !is_null_oid(old_oid),
-			    !is_null_oid(new_oid),
-			    ce->name, 0, dirty_submodule);
+		finish_run_diff_files(revs, ce, istate, changed, dirty_submodule, newmode);
+	}
+	if (submodules.nr > 0) {
+		if (get_submodules_status(revs->repo, &submodules,
+						parallel_jobs > 0 ? parallel_jobs : 1))
+			BUG("Submodule status failed");
+		for (int i = 0; i < submodules.nr; i++) {
+			struct submodule_status_util *util = submodules.items[i].util;
 
+			finish_run_diff_files(revs, util->ce, NULL, util->changed,
+							util->dirty_submodule, util->newmode);
+		}
 	}
 	diffcore_std(&revs->diffopt);
 	diff_flush(&revs->diffopt);
@@ -308,7 +364,7 @@ static int get_stat_data(const struct index_state *istate,
 			return -1;
 		}
 		changed = match_stat_with_submodule(diffopt, ce, &st,
-						    0, dirty_submodule);
+						    0, dirty_submodule, NULL, NULL);
 		if (changed) {
 			mode = ce_mode_from_stat(ce, st.st_mode);
 			oid = null_oid();

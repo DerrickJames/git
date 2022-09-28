@@ -140,6 +140,11 @@ test_expect_success 'run_command runs ungrouped in parallel with more jobs avail
 	test_line_count = 4 err
 '
 
+test_expect_success 'run_command runs pipe_output in parallel with more jobs available than tasks' '
+	test-tool run-command --pipe-output run-command-parallel 5 sh -c "printf \"%s\n%s\n\" Hello World" 2>actual &&
+	test_cmp expect actual
+'
+
 test_expect_success 'run_command runs in parallel with as many jobs as tasks' '
 	test-tool run-command run-command-parallel 4 sh -c "printf \"%s\n%s\n\" Hello World" 2>actual &&
 	test_cmp expect actual
@@ -149,6 +154,11 @@ test_expect_success 'run_command runs ungrouped in parallel with as many jobs as
 	test-tool run-command --ungroup run-command-parallel 4 sh -c "printf \"%s\n%s\n\" Hello World" >out 2>err &&
 	test_line_count = 8 out &&
 	test_line_count = 4 err
+'
+
+test_expect_success 'run_command runs pipe_output in parallel with as many jobs as tasks' '
+	test-tool run-command --pipe-output run-command-parallel 4 sh -c "printf \"%s\n%s\n\" Hello World" 2>actual &&
+	test_cmp expect actual
 '
 
 test_expect_success 'run_command runs in parallel with more tasks than jobs available' '
@@ -161,6 +171,12 @@ test_expect_success 'run_command runs ungrouped in parallel with more tasks than
 	test_line_count = 8 out &&
 	test_line_count = 4 err
 '
+
+test_expect_success 'run_command runs pipe_output in parallel with more tasks than jobs available' '
+	test-tool run-command --pipe-output run-command-parallel 3 sh -c "printf \"%s\n%s\n\" Hello World" 2>actual &&
+	test_cmp expect actual
+'
+
 
 cat >expect <<-EOF
 preloaded output of a child
@@ -182,6 +198,11 @@ test_expect_success 'run_command is asked to abort gracefully (ungroup)' '
 	test_line_count = 6 err
 '
 
+test_expect_success 'run_command is asked to abort gracefully (pipe_output)' '
+	test-tool run-command --pipe-output run-command-abort 3 false 2>actual &&
+	test_cmp expect actual
+'
+
 cat >expect <<-EOF
 no further jobs available
 EOF
@@ -195,6 +216,11 @@ test_expect_success 'run_command outputs (ungroup) ' '
 	test-tool run-command --ungroup run-command-no-jobs 3 sh -c "printf \"%s\n%s\n\" Hello World" >out 2>err &&
 	test_must_be_empty out &&
 	test_cmp expect err
+'
+
+test_expect_success 'run_command outputs (pipe_output) ' '
+	test-tool run-command --pipe-output run-command-no-jobs 3 sh -c "printf \"%s\n%s\n\" Hello World" 2>actual &&
+	test_cmp expect actual
 '
 
 test_trace () {

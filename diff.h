@@ -627,7 +627,7 @@ void diff_get_merge_base(const struct rev_info *revs, struct object_id *mb);
 #define DIFF_SILENT_ON_REMOVED 01
 /* report racily-clean paths as modified */
 #define DIFF_RACY_IS_MODIFIED 02
-int run_diff_files(struct rev_info *revs, unsigned int option);
+int run_diff_files(struct rev_info *revs, unsigned int option, int parallel_jobs);
 
 #define DIFF_INDEX_CACHED 01
 #define DIFF_INDEX_MERGE_BASE 02

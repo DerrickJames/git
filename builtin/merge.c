@@ -1009,7 +1009,7 @@ static int evaluate_result(void)
 		DIFF_FORMAT_CALLBACK;
 	rev.diffopt.format_callback = count_diff_files;
 	rev.diffopt.format_callback_data = &cnt;
-	run_diff_files(&rev, 0);
+	run_diff_files(&rev, 0, -1);
 
 	/*
 	 * Check how many unmerged entries are
