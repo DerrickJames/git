@@ -1822,50 +1822,70 @@ static void add_alternate_refs_to_pending(struct rev_info *revs,
 	for_each_alternate_ref(add_one_alternate_ref, &data);
 }
 
-static int add_parents_only(struct rev_info *revs, const char *arg_, int flags,
-			    int exclude_parent)
+static struct commit *get_commit(struct rev_info *revs, const char *arg_)
 {
 	struct object_id oid;
 	struct object *it;
-	struct commit *commit;
-	struct commit_list *parents;
-	int parent_number;
+	const char *arg = arg_;
+
+	if (*arg == '^')
+		arg++;
+	if (get_oid_committish(arg, &oid))
+		return NULL;
+	while (1) {
+		it = get_reference(revs, arg, &oid, 0);
+		if (!it && revs->ignore_missing)
+			return NULL;
+		if (it->type != OBJ_TAG)
+			break;
+		if (!((struct tag*)it)->tagged)
+			return NULL;
+		oidcpy(&oid, &((struct tag*)it)->tagged->oid);
+	}
+	if (it->type != OBJ_COMMIT)
+		return NULL;
+	return (struct commit *)it;
+}
+
+static void add_parent(struct rev_info *revs, struct object *parent,
+		       const char *arg_, int flags)
+{
 	const char *arg = arg_;
 
 	if (*arg == '^') {
 		flags ^= UNINTERESTING | BOTTOM;
 		arg++;
 	}
-	if (get_oid_committish(arg, &oid))
-		return 0;
-	while (1) {
-		it = get_reference(revs, arg, &oid, 0);
-		if (!it && revs->ignore_missing)
-			return 0;
-		if (it->type != OBJ_TAG)
-			break;
-		if (!((struct tag*)it)->tagged)
-			return 0;
-		oidcpy(&oid, &((struct tag*)it)->tagged->oid);
-	}
-	if (it->type != OBJ_COMMIT)
-		return 0;
-	commit = (struct commit *)it;
-	if (exclude_parent &&
-	    exclude_parent > commit_list_count(commit->parents))
+	parent->flags |= flags;
+	add_rev_cmdline(revs, parent, arg_, REV_CMD_PARENTS_ONLY, flags);
+	add_pending_object(revs, parent, arg);
+}
+
+static void add_parents(struct rev_info *revs, struct commit_list *parents,
+			const char *arg, int flags)
+{
+	for (; parents; parents = parents->next)
+		add_parent(revs, &parents->item->object, arg, flags);
+}
+
+static int add_nth_parent(struct rev_info *revs, const char *arg_, int flags,
+			  int exclude_parent)
+{
+	struct commit *commit = get_commit(revs, arg_);
+	struct commit_list *parents;
+	int parent_number;
+
+	if (!commit)
 		return 0;
 	for (parents = commit->parents, parent_number = 1;
 	     parents;
 	     parents = parents->next, parent_number++) {
-		if (exclude_parent && parent_number != exclude_parent)
-			continue;
-
-		it = &parents->item->object;
-		it->flags |= flags;
-		add_rev_cmdline(revs, it, arg_, REV_CMD_PARENTS_ONLY, flags);
-		add_pending_object(revs, it, arg);
+		if (parent_number == exclude_parent) {
+			add_parent(revs, &parents->item->object, arg_, flags);
+			return 1;
+		}
 	}
-	return 1;
+	return 0;
 }
 
 void repo_init_revisions(struct repository *r,
@@ -2088,6 +2108,7 @@ static int handle_revision_arg_1(const char *arg_, struct rev_info *revs, int fl
 	const char *arg = arg_;
 	int cant_be_filename = revarg_opt & REVARG_CANNOT_BE_FILENAME;
 	unsigned get_sha1_flags = GET_OID_RECORD_PATH;
+	struct commit *caret_bang_commit = NULL;
 
 	flags = flags & UNINTERESTING ? flags | BOTTOM : flags & ~BOTTOM;
 
@@ -2104,15 +2125,21 @@ static int handle_revision_arg_1(const char *arg_, struct rev_info *revs, int fl
 
 	mark = strstr(arg, "^@");
 	if (mark && !mark[2]) {
+		struct commit *commit;
+
 		*mark = 0;
-		if (add_parents_only(revs, arg, flags, 0))
+		commit = get_commit(revs, arg);
+		if (commit) {
+			add_parents(revs, commit->parents, arg, flags);
 			return 0;
+		}
 		*mark = '^';
 	}
 	mark = strstr(arg, "^!");
 	if (mark && !mark[2]) {
 		*mark = 0;
-		if (!add_parents_only(revs, arg, flags ^ (UNINTERESTING | BOTTOM), 0))
+		caret_bang_commit = get_commit(revs, arg);
+		if (!caret_bang_commit)
 			*mark = '^';
 	}
 	mark = strstr(arg, "^-");
@@ -2120,14 +2147,13 @@ static int handle_revision_arg_1(const char *arg_, struct rev_info *revs, int fl
 		int exclude_parent = 1;
 
 		if (mark[2]) {
-			char *end;
-			exclude_parent = strtoul(mark + 2, &end, 10);
-			if (*end != '\0' || !exclude_parent)
+			if (strtol_i(mark + 2, 10, &exclude_parent) ||
+			    exclude_parent < 1)
 				return -1;
 		}
 
 		*mark = 0;
-		if (!add_parents_only(revs, arg, flags ^ (UNINTERESTING | BOTTOM), exclude_parent))
+		if (!add_nth_parent(revs, arg, flags ^ (UNINTERESTING | BOTTOM), exclude_parent))
 			*mark = '^';
 	}
 
@@ -2150,6 +2176,9 @@ static int handle_revision_arg_1(const char *arg_, struct rev_info *revs, int fl
 	add_rev_cmdline(revs, object, arg_, REV_CMD_REV, flags ^ local_flags);
 	add_pending_object_with_path(revs, object, arg, oc.mode, oc.path);
 	free(oc.path);
+	if (caret_bang_commit)
+		add_parents(revs, caret_bang_commit->parents, arg,
+			    flags ^ (UNINTERESTING | BOTTOM));
 	return 0;
 }
 
