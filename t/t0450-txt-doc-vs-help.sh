@@ -129,6 +129,21 @@ do
 		! grep "$HT" help.raw
 	'
 
+	test_expect_success "$builtin -h output has consistent spacing" '
+		builtin_to_synopsis "$builtin" >help.raw &&
+		sed -n \
+			-e "/^ / {
+				s/[^ ].*//;
+				p;
+			}" \
+			<help.raw >help &&
+		sort -u help >help.ws &&
+		if test -s help.ws
+		then
+			test_line_count = 1 help.ws
+		fi
+	'
+
 	txt="$(builtin_to_txt "$builtin")" &&
 	preq="$(echo BUILTIN_TXT_$builtin | tr '[:lower:]-' '[:upper:]_')" &&
 
