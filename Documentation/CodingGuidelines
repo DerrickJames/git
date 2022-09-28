@@ -634,7 +634,8 @@ Writing Documentation:
 
  A few commented examples follow to provide reference when writing or
  modifying command usage strings and synopsis sections in the manual
- pages:
+ pages. The two should match, see t/t0450-txt-doc-vs-help.sh for
+ (partial) regression testing.
 
  Placeholders are spelled in lowercase and enclosed in angle brackets:
    <file>
